@@ -553,6 +553,9 @@ table.prev tr.off td.memo{color:var(--mute)}
     if (e.code === '54000' || /too large/i.test(e.message || '')) return { code: 'quota_exceeded', message: e.message };
     return { code: 'unavailable', message: e.message };
   }
+  // 아이디만 입력하면 아이디@und.local 계정으로 로그인 (메일 인증 없이 대시보드에서 만든 계정)
+  function toEmail(v) { v = v.trim().toLowerCase(); return v.indexOf('@') < 0 ? v + '@und.local' : v; }
+  function idOf(email) { return /@und\.local$/.test(email) ? email.slice(0, -10) : email; }
   function split(path) { var i = path.indexOf('/'); return [path.slice(0, i), path.slice(i + 1)]; }
 
   // ---- 로그인 게이트: 직원 로그인이 끝나야 db 가 열림
@@ -561,8 +564,8 @@ table.prev tr.off td.memo{color:var(--mute)}
       var box = document.getElementById('und-auth');
       if (!box) {
         box = document.createElement('div'); box.id = 'und-auth';
-        box.innerHTML = '<form><h1>UND 예약관리</h1><p>직원 계정으로 로그인하세요</p>' +
-          '<input name="email" type="email" placeholder="이메일" autocomplete="username" required>' +
+        box.innerHTML = '<form><h1>UND 예약관리</h1><p>직원 아이디로 로그인하세요</p>' +
+          '<input name="email" type="text" placeholder="아이디" autocomplete="username" autocapitalize="off" required>' +
           '<input name="pw" type="password" placeholder="비밀번호" autocomplete="current-password" required>' +
           '<p class="err"></p><button type="submit">로그인</button></form>';
         document.body.appendChild(box);
@@ -570,9 +573,9 @@ table.prev tr.off td.memo{color:var(--mute)}
           ev.preventDefault();
           var f = ev.target, btn = f.querySelector('button'), er = f.querySelector('.err');
           btn.disabled = true; er.textContent = '';
-          sb.auth.signInWithPassword({ email: f.email.value.trim(), password: f.pw.value }).then(function (r) {
+          sb.auth.signInWithPassword({ email: toEmail(f.email.value), password: f.pw.value }).then(function (r) {
             btn.disabled = false;
-            if (r.error) { er.textContent = '이메일 또는 비밀번호가 맞지 않습니다'; return; }
+            if (r.error) { er.textContent = '아이디 또는 비밀번호가 맞지 않습니다'; return; }
             check(r.data.session);
           });
         });
@@ -585,7 +588,7 @@ table.prev tr.off td.memo{color:var(--mute)}
         if (r.error || !r.data) { sb.auth.signOut(); showLogin('등록된 직원 계정이 아닙니다 — 관리자에게 문의하세요'); return; }
         var box = document.getElementById('und-auth'); if (box) box.remove();
         if (!document.getElementById('und-logout')) {
-          var b = document.createElement('button'); b.id = 'und-logout'; b.textContent = '로그아웃 (' + session.user.email + ')';
+          var b = document.createElement('button'); b.id = 'und-logout'; b.textContent = '로그아웃 (' + idOf(session.user.email) + ')';
           b.onclick = function () { sb.auth.signOut().then(function () { location.reload(); }); };
           document.body.appendChild(b);
         }
