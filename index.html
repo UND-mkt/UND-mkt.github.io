@@ -527,6 +527,142 @@ table.prev tr.off td.memo{color:var(--mute)}
 }
 
 </style>
+<!-- UND Supabase 연결: window.claude.use('db'|'user'|'downloads') 를 Supabase로 대체 + 직원 로그인 -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.118.0/dist/umd/supabase.js"></script>
+<style>
+#und-auth{position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;background:#0f172a;font-family:inherit}
+#und-auth form{width:min(340px,calc(100vw - 32px));background:#fff;border-radius:14px;padding:28px 24px;box-shadow:0 10px 40px rgba(0,0,0,.3);display:flex;flex-direction:column;gap:10px}
+#und-auth h1{margin:0 0 6px;font-size:20px;color:#0f172a}
+#und-auth p{margin:0 0 6px;font-size:13px;color:#64748b}
+#und-auth input{padding:11px 12px;border:1px solid #cbd5e1;border-radius:8px;font-size:15px}
+#und-auth button{padding:12px;border:0;border-radius:8px;background:#2563eb;color:#fff;font-size:15px;font-weight:600;cursor:pointer}
+#und-auth button:disabled{opacity:.6}
+#und-auth .err{color:#dc2626;font-size:13px;min-height:18px;margin:0}
+#und-logout{position:fixed;right:12px;bottom:12px;z-index:9999;padding:6px 10px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;color:#475569;font-size:12px;cursor:pointer;opacity:.8}
+</style>
+<script>
+(function () {
+  var SB_URL = 'https://srkoimuotdbjglobyegx.supabase.co';
+  var SB_KEY = 'sb_publishable_vWf1As3_efcDdda2GuWQWA_C7oHGoP_';
+  var sb = window.supabase.createClient(SB_URL, SB_KEY, { auth: { persistSession: true, autoRefreshToken: true } });
+  window.UND_SB = sb;
+
+  function errCode(e) {
+    if (!e) return { code: 'unavailable' };
+    if (e.code === '42501' || /row-level security|permission denied/i.test(e.message || '')) return { code: 'not_granted', message: e.message };
+    if (e.code === '54000' || /too large/i.test(e.message || '')) return { code: 'quota_exceeded', message: e.message };
+    return { code: 'unavailable', message: e.message };
+  }
+  function split(path) { var i = path.indexOf('/'); return [path.slice(0, i), path.slice(i + 1)]; }
+
+  // ---- 로그인 게이트: 직원 로그인이 끝나야 db 가 열림
+  var ready = new Promise(function (resolve) {
+    function showLogin(msg) {
+      var box = document.getElementById('und-auth');
+      if (!box) {
+        box = document.createElement('div'); box.id = 'und-auth';
+        box.innerHTML = '<form><h1>UND 예약관리</h1><p>직원 계정으로 로그인하세요</p>' +
+          '<input name="email" type="email" placeholder="이메일" autocomplete="username" required>' +
+          '<input name="pw" type="password" placeholder="비밀번호" autocomplete="current-password" required>' +
+          '<p class="err"></p><button type="submit">로그인</button></form>';
+        document.body.appendChild(box);
+        box.querySelector('form').addEventListener('submit', function (ev) {
+          ev.preventDefault();
+          var f = ev.target, btn = f.querySelector('button'), er = f.querySelector('.err');
+          btn.disabled = true; er.textContent = '';
+          sb.auth.signInWithPassword({ email: f.email.value.trim(), password: f.pw.value }).then(function (r) {
+            btn.disabled = false;
+            if (r.error) { er.textContent = '이메일 또는 비밀번호가 맞지 않습니다'; return; }
+            check(r.data.session);
+          });
+        });
+      }
+      box.querySelector('.err').textContent = msg || '';
+    }
+    function check(session) {
+      if (!session) { showLogin(); return; }
+      sb.rpc('am_i_staff').then(function (r) {
+        if (r.error || !r.data) { sb.auth.signOut(); showLogin('등록된 직원 계정이 아닙니다 — 관리자에게 문의하세요'); return; }
+        var box = document.getElementById('und-auth'); if (box) box.remove();
+        if (!document.getElementById('und-logout')) {
+          var b = document.createElement('button'); b.id = 'und-logout'; b.textContent = '로그아웃 (' + session.user.email + ')';
+          b.onclick = function () { sb.auth.signOut().then(function () { location.reload(); }); };
+          document.body.appendChild(b);
+        }
+        resolve(session);
+      });
+    }
+    function start() { sb.auth.getSession().then(function (r) { check(r.data.session); }); }
+    if (document.body) start(); else document.addEventListener('DOMContentLoaded', start);
+  });
+
+  // ---- Firestore 비슷한 최소 API (앱이 쓰는 것만)
+  function collectionRef(col) {
+    return {
+      onSnapshot: function (cb, onErr) {
+        var map = {};
+        function emit() {
+          cb({ docs: Object.keys(map).map(function (id) { var v = map[id]; return { id: id, data: function () { return v; } }; }) });
+        }
+        function loadAll(from) {
+          return sb.from('docs').select('id,data').eq('collection', col).order('id').range(from, from + 999).then(function (r) {
+            if (r.error) throw r.error;
+            r.data.forEach(function (row) { map[row.id] = row.data; });
+            if (r.data.length === 1000) return loadAll(from + 1000);
+          });
+        }
+        var ch = sb.channel('docs-' + col + '-' + Math.random().toString(36).slice(2))
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'docs', filter: 'collection=eq.' + col }, function (p) {
+            if (p.eventType === 'DELETE') { if (p.old && p.old.id != null) delete map[p.old.id]; }
+            else if (p.new) map[p.new.id] = p.new.data;
+            emit();
+          })
+          .subscribe(function (status) { if (status === 'SUBSCRIBED') loadAll(0).then(emit, function (e) { onErr && onErr(errCode(e)); }); });
+        return function () { sb.removeChannel(ch); };
+      }
+    };
+  }
+  function docRef(path) {
+    var p = split(path), col = p[0], id = p[1];
+    return {
+      set: function (body) {
+        return sb.from('docs').upsert({ collection: col, id: id, data: body }).then(function (r) { if (r.error) throw errCode(r.error); });
+      },
+      delete: function () {
+        return sb.from('docs').delete().eq('collection', col).eq('id', id).then(function (r) { if (r.error) throw errCode(r.error); });
+      },
+      onSnapshot: function (cb, onErr) {
+        var ch = sb.channel('doc-' + col + '-' + id + '-' + Math.random().toString(36).slice(2))
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'docs', filter: 'collection=eq.' + col }, function (pl) {
+            var row = pl.eventType === 'DELETE' ? pl.old : pl.new;
+            if (!row || row.id !== id) return;
+            if (pl.eventType === 'DELETE') cb({ exists: false, data: function () { return undefined; } });
+            else cb({ exists: true, data: function () { return pl.new.data; } });
+          })
+          .subscribe(function (status) {
+            if (status !== 'SUBSCRIBED') return;
+            sb.from('docs').select('data').eq('collection', col).eq('id', id).maybeSingle().then(function (r) {
+              if (r.error) { onErr && onErr(errCode(r.error)); return; }
+              cb({ exists: !!r.data, data: function () { return r.data ? r.data.data : undefined; } });
+            });
+          });
+        return function () { sb.removeChannel(ch); };
+      }
+    };
+  }
+  var db = { collection: collectionRef, doc: docRef };
+  var user = { can: function () { return true; } };
+
+  window.claude = {
+    use: function (name) {
+      if (name === 'db') return ready.then(function () { return db; });
+      if (name === 'user') return ready.then(function () { return user; });
+      return Promise.resolve(null); // downloads 등은 브라우저 기본 동작 사용
+    }
+  };
+})();
+</script>
+
 </head>
 <body>
 <div class="app">
