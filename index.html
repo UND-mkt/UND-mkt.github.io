@@ -130,6 +130,7 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
 .chip.late{background:var(--late);color:var(--late-ink)}
 .chip.today{background:var(--today-bg);color:#1A1405}
 .chip.plan{background:var(--sunk);color:var(--mute)}
+.chip.new{background:var(--accent);color:#fff}
 .st{display:inline-flex;align-items:center;gap:5px;padding:1px 7px;border-radius:2px;font-size:12px;font-weight:700;white-space:nowrap;line-height:1.6}
 .st .n{font-family:var(--num);font-weight:800;opacity:.75}
 .st.tm{background:var(--g-tm-soft);color:var(--g-tm)}.st.rsv{background:var(--g-rsv-soft);color:var(--g-rsv)}
@@ -1095,6 +1096,8 @@ table.prev tr.off td.memo{color:var(--mute)}
   // ---------------------------------------------------------------- 표시 도우미
   function md(s) { if (!s) return ''; var d = L.parse(s); return (d.getMonth() + 1) + '/' + d.getDate() + '(' + L.WD[d.getDay()] + ')'; }
   function mdt(iso) { return iso ? md(L.dayOf(iso)) + (L.timeOf(iso) ? ' ' + L.timeOf(iso) : '') : ''; }
+  // 접수 후 24시간 동안 이름 옆에 「신규」 표시
+  function newChip(c) { var t = c && c.inAt ? new Date(c.inAt) : null; return t && !isNaN(t) && Date.now() - t.getTime() < 864e5 ? '<span class="chip new">신규</span>' : ''; }
   function flagChip(f) { return f === '지연' ? '<span class="chip late">지연</span>' : f === '오늘' ? '<span class="chip today">오늘</span>' : f === '예정' ? '<span class="chip plan">예정</span>' : ''; }
   function stChip(d) { return '<span class="st ' + d.group + '"><span class="n">' + String(d.code).padStart(2, '0') + '</span>' + esc(d.label) + '</span>'; }
   function won(n) { return n ? Number(n).toLocaleString('ko-KR') + '원' : ''; }
@@ -1524,7 +1527,7 @@ table.prev tr.off td.memo{color:var(--mute)}
     var c = x.c, d = x.d;
     return '<div class="task' + (d.flag === '지연' ? ' is-late' : '') + '">' +
       '<div class="fl">' + flagChip(d.flag) + '</div>' +
-      '<div class="who"><b>' + esc(c.name || '(이름 없음)') + '</b><span class="num">' + phoneDisp(c.phone) + '</span>' + stChip(d) + '</div>' +
+      '<div class="who"><b>' + esc(c.name || '(이름 없음)') + '</b>' + newChip(c) + '<span class="num">' + phoneDisp(c.phone) + '</span>' + stChip(d) + '</div>' +
       '<div class="what">' + esc(d.action) + (d.flag === '지연' ? '<span class="d">' + md(d.due) + '까지</span>' : '') + '</div>' +
       '<div class="go">' + primaryBtn(x) + '<button class="btn sm" data-act="open" data-id="' + esc(c.id) + '">카드</button></div></div>';
   }
@@ -1622,14 +1625,14 @@ table.prev tr.off td.memo{color:var(--mute)}
         var c = x.c, d = x.d;
         return '<tr data-act="open" data-id="' + esc(c.id) + '" class="' + (d.flag === '지연' ? 'is-late' : '') + flashCls(c) + '">' +
           '<td class="fl">' + flagChip(d.flag) + '<span class="num">' + md(d.due) + '</span></td>' +
-          '<td class="nm"><b>' + esc(c.name || '(이름 없음)') + '</b><span class="num">' + phoneDisp(c.phone) + '</span></td>' +
+          '<td class="nm"><b>' + esc(c.name || '(이름 없음)') + '</b>' + newChip(c) + '<span class="num">' + phoneDisp(c.phone) + '</span></td>' +
           '<td>' + stSelect(x) + '</td>' +
           '<td class="act"><span>' + esc(d.action) + '</span>' + primaryBtn(x, 'btn sm') + '</td>' +
           '<td>' + rsvCell(x) + '</td><td>' + inCell(x) + '</td><td>' + tmCell(x) + '</td></tr>';
       }).join('');
       var cards = rows.map(function (x) {
         var c = x.c, d = x.d;
-        return '<div class="ccard' + (d.flag === '지연' ? ' is-late' : '') + flashCls(c) + '"><div class="l1"><button type="button" class="ccard-open" data-act="open" data-id="' + esc(c.id) + '">' + flagChip(d.flag) + '<b>' + esc(c.name || '(이름 없음)') + '</b><span class="num muted small">' + phoneDisp(c.phone) + '</span></button>' + stSelect(x) + '</div>' +
+        return '<div class="ccard' + (d.flag === '지연' ? ' is-late' : '') + flashCls(c) + '"><div class="l1"><button type="button" class="ccard-open" data-act="open" data-id="' + esc(c.id) + '">' + flagChip(d.flag) + '<b>' + esc(c.name || '(이름 없음)') + '</b>' + newChip(c) + '<span class="num muted small">' + phoneDisp(c.phone) + '</span></button>' + stSelect(x) + '</div>' +
           '<div class="l2"><span><b>' + esc(d.action) + '</b> <span class="num muted small">' + md(d.due) + '</span></span>' + primaryBtn(x, 'btn sm') + '</div>' +
           '<div class="l3"><span class="fld"><span class="k">예약</span>' + rsvCell(x) + '</span><span class="fld"><span class="k">신청</span>' + inCell(x) + '</span><span class="fld"><span class="k">담당</span>' + tmCell(x) + '</span></div></div>';
       }).join('');
