@@ -443,6 +443,7 @@ details.fold>summary .muted{font-weight:500;font-size:12px}
 .memo-line{margin-top:6px;white-space:pre-line;color:var(--ink-2)}
 
 /* ---------- Meta 잠재 고객 가져오기 ---------- */
+.syncbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
 .impstrip{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:10px 14px;margin-bottom:12px;border:1px dashed var(--line-2);background:var(--surface);font-size:13px}
 .impstrip>svg{width:18px;height:18px;stroke:var(--accent);fill:none;stroke-width:1.8;flex:none}
 .impstrip>span:first-of-type{flex:1 1 300px;min-width:0}
@@ -1610,7 +1611,8 @@ table.prev tr.off td.memo{color:var(--mute)}
   VIEW.customers = {
     mount: function () {
       var f = S.f, h = f.imp ? impEntry(f.imp) : null;
-      $('#view').innerHTML = (realWritable() ? '<div class="impstrip">' + ICON.upload + '<span><b>Meta 잠재 고객 파일</b>을 끌어다 놓거나 고르세요 — CSV · 엑셀(xlsx · xls). 새 고객만 더하고, 이미 있는 고객은 건너뜁니다.</span><span class="btns">' +
+      $('#view').innerHTML = (realWritable() ? '<div class="syncbar"><button type="button" class="btn primary" data-act="meta-sync">↻ 리스트 갱신하기</button><span class="muted small" id="sync-st">' + esc(S.syncMsg || 'Meta 새 리드를 바로 가져옵니다 · 매시간 자동으로도 가져옵니다') + '</span></div>' : '') +
+        (realWritable() ? '<div class="impstrip">' + ICON.upload + '<span><b>Meta 잠재 고객 파일</b>을 끌어다 놓거나 고르세요 — CSV · 엑셀(xlsx · xls). 새 고객만 더하고, 이미 있는 고객은 건너뜁니다.</span><span class="btns">' +
         fileBtn('btn sm primary', '파일 고르기') + '<button class="btn sm" data-act="paste-open">붙여넣기</button></span></div>' : '') +
         '<div class="toolbar">' +
         '<input class="inp" id="f-q" type="search" placeholder="이름 · 번호 · 메모" value="' + esc(f.q) + '" aria-label="고객 찾기">' +
@@ -3318,6 +3320,21 @@ table.prev tr.off td.memo{color:var(--mute)}
   };
   ACT['confirm-yes'] = function () { var m = S.modal; closeModal(); if (m && m.onYes) m.onYes(); };
   ACT['f-flag'] = function (el) { S.f.flag = el.dataset.v; $$('[data-act="f-flag"]').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.v === S.f.flag)); }); VIEW.customers.update(); };
+  ACT['meta-sync'] = function (el) {
+    if (el.dataset.busy) return;
+    el.dataset.busy = '1'; el.disabled = true; el.textContent = '가져오는 중…';
+    var st = function (m) { S.syncMsg = m; var x = $('#sync-st'); if (x) x.textContent = m; };
+    var done = function () { delete el.dataset.busy; el.disabled = false; el.textContent = '↻ 리스트 갱신하기'; };
+    fetch('https://srkoimuotdbjglobyegx.supabase.co/functions/v1/und-meta-sync', { method: 'POST' })
+      .then(function (r) { return r.json(); })
+      .then(function (r) {
+        var t = now().slice(11, 16);
+        if (!r.ok) { st('갱신 실패 — ' + (r.msg || '잠시 뒤 다시')); toast('갱신 실패 — ' + (r.msg || '')); }
+        else if (r.skipped) { st(t + ' · 방금 갱신했습니다'); toast('방금 갱신했습니다 — 30초 뒤 다시 누를 수 있습니다'); }
+        else { st(t + ' 갱신 · Meta 리드 ' + r.total + '건 중 새 고객 ' + r.n + '명'); toast(r.n ? '새 고객 ' + r.n + '명을 가져왔습니다' : '새 리드가 없습니다'); }
+      }, function () { st('갱신 실패 — 인터넷 연결 확인'); toast('갱신 실패 — 인터넷 연결 확인'); })
+      .then(done, done);
+  };
   ACT['f-reset'] = function () { S.f = { q: '', flag: 'all', grp: 'all', staff: 'all', imp: '' }; VIEW.customers.mount(); };
   ACT['f-imp-clear'] = function () { S.f.imp = ''; VIEW.customers.mount(); };
   ACT['cal-move'] = function (el) { S.calStart = L.addDays(S.calStart, +el.dataset.v); VIEW.calendar.update(); };
