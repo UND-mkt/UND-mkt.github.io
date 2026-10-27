@@ -1091,6 +1091,8 @@ table.prev tr.off td.memo{color:var(--mute)}
     Object.keys(m).forEach(function (id) { var d = L.derive(m[id], t, cal); if (d) D[id] = d; });
   }
   function list() { var m = C(); return Object.keys(D).map(function (id) { return { c: m[id], d: D[id] }; }); }
+  // 고객 목록: 신청일(날짜) 최신순 → 같은 날 안에서는 급한 순
+  function byInDay(a, b) { var x = L.dayOf(a.c.inAt || ''), y = L.dayOf(b.c.inAt || ''); return x !== y ? (x < y ? 1 : -1) : byPriority(a, b); }
   var FO = { '지연': 0, '오늘': 1, '예정': 2, '': 3 };
   function byPriority(a, b) {
     var f = FO[a.d.flag] - FO[b.d.flag]; if (f) return f;
@@ -1629,7 +1631,7 @@ table.prev tr.off td.memo{color:var(--mute)}
         if (f.staff !== 'all' && x.c.tm !== f.staff && x.c.consult !== f.staff) return false;
         if (q) { var hay = ((x.c.name || '') + ' ' + (x.c.phone || '') + ' ' + (x.c.memo || '') + ' ' + (x.c.email || '')).toLowerCase().replace(/-/g, ''); if (hay.indexOf(q) < 0) return false; }
         return true;
-      }).sort(byPriority);
+      }).sort(byInDay);
       var all = list();
       $('#f-count').textContent = rows.length + '명 · 지연 ' + all.filter(function (x) { return x.d.flag === '지연'; }).length + ' · 오늘 ' + all.filter(function (x) { return x.d.flag === '오늘'; }).length;
       if (S.mode === 'loading') { $('#cust-list').innerHTML = '<div class="panel"><div class="empty-state"><b>고객을 불러오는 중</b></div></div>'; return; }
