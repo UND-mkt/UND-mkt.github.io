@@ -210,6 +210,9 @@ table.list tr{cursor:pointer}
 table.list tbody tr:hover td{background:var(--surface-2)}
 table.list tr.is-late td:first-child{box-shadow:inset 3px 0 0 var(--late)}
 table.list .nm b{display:block}
+table.list .inat{white-space:nowrap}
+table.list .inat b{display:block;font-weight:700}
+table.list .inat .tm{color:var(--mute);font-size:12px;margin-right:6px}
 table.list .nm .num{color:var(--mute);font-size:12px}
 .cards{display:none}
 .ccard{display:flex;flex-direction:column;gap:8px;padding:12px 14px;background:var(--surface);border:1px solid var(--line);text-align:left;width:100%}
@@ -1107,6 +1110,7 @@ table.prev tr.off td.memo{color:var(--mute)}
     return best;
   }
   function inLine(c) { return c.inAt ? '<span class="tline"><span class="k">신청</span>' + esc(mdt(c.inAt)) + '</span>' : ''; }
+  function inAtCell(c) { return c.inAt ? '<b class="num">' + esc(md(L.dayOf(c.inAt))) + '</b><span class="num tm">' + esc(L.timeOf(c.inAt)) + '</span>' + newChip(c) : '<span class="muted small">—</span>'; }
   function contactCell(c) { var l = lastContact(c); return l ? '<span class="tline"><span class="k">' + l.t + '</span>' + esc(mdt(l.at)) + '</span>' : '<span class="muted small">아직 없음</span>'; }
   function flagChip(f) { return f === '지연' ? '<span class="chip late">지연</span>' : f === '오늘' ? '<span class="chip today">오늘</span>' : f === '예정' ? '<span class="chip plan">예정</span>' : ''; }
   function stChip(d) { return '<span class="st ' + d.group + '"><span class="n">' + String(d.code).padStart(2, '0') + '</span>' + esc(d.label) + '</span>'; }
@@ -1634,12 +1638,13 @@ table.prev tr.off td.memo{color:var(--mute)}
       var tr = rows.map(function (x) {
         var c = x.c, d = x.d;
         return '<tr data-act="open" data-id="' + esc(c.id) + '" class="' + (d.flag === '지연' ? 'is-late' : '') + flashCls(c) + '">' +
+          '<td class="inat">' + inAtCell(c) + '</td>' +
           '<td class="fl">' + flagChip(d.flag) + '<span class="num">' + md(d.due) + '</span></td>' +
-          '<td class="nm"><b>' + esc(c.name || '(이름 없음)') + '</b>' + newChip(c) + '<span class="num">' + phoneDisp(c.phone) + '</span>' + inLine(c) + '</td>' +
+          '<td class="nm"><b>' + esc(c.name || '(이름 없음)') + '</b><span class="num">' + phoneDisp(c.phone) + '</span></td>' +
           '<td>' + contactCell(c) + '</td>' +
           '<td>' + stSelect(x) + '</td>' +
           '<td class="act"><span>' + esc(d.action) + '</span>' + primaryBtn(x, 'btn sm') + '</td>' +
-          '<td>' + rsvCell(x) + '</td><td>' + inCell(x) + '</td><td>' + tmCell(x) + '</td></tr>';
+          '<td>' + rsvCell(x) + '</td><td>' + tmCell(x) + '</td></tr>';
       }).join('');
       var cards = rows.map(function (x) {
         var c = x.c, d = x.d;
@@ -1647,8 +1652,8 @@ table.prev tr.off td.memo{color:var(--mute)}
           '<div class="l2"><span><b>' + esc(d.action) + '</b> <span class="num muted small">' + md(d.due) + '</span></span>' + primaryBtn(x, 'btn sm') + '</div>' +
           '<div class="l3"><span class="fld"><span class="k">예약</span>' + rsvCell(x) + '</span><span class="fld"><span class="k">신청</span>' + inCell(x) + '</span><span class="fld"><span class="k">컨택</span>' + contactCell(c) + '</span><span class="fld"><span class="k">담당</span>' + tmCell(x) + '</span></div></div>';
       }).join('');
-      $('#cust-list').innerHTML = '<div class="tablewrap"><table class="list"><thead><tr><th>처리 기한</th><th>고객 · 신청</th><th>최근 컨택</th><th>진행상태</th><th>다음 할 일</th><th>예약 날짜 · 시간</th><th>신청일</th><th>담당</th></tr></thead><tbody>' + tr + '</tbody></table></div><div class="cards">' + cards + '</div>' +
-        (writable() ? '<p class="hint" style="margin-top:10px">진행상태 · 예약 · 신청일 · 담당은 줄에서 바로 고칩니다. 진행상태를 고르면 그 상태가 되도록 기록이 남고(고객 카드 › 기록), 바로 뒤 「실행 취소」로 되돌릴 수 있습니다. 확정 문자(C1)를 보낸 뒤 예약 날짜를 바꾸면 「예약 변경」으로 남아 C4 문자가 다음 할 일이 됩니다.</p>' : '');
+      $('#cust-list').innerHTML = '<div class="tablewrap"><table class="list"><thead><tr><th>신청일</th><th>처리 기한</th><th>고객</th><th>최근 컨택</th><th>진행상태</th><th>다음 할 일</th><th>예약 날짜 · 시간</th><th>담당</th></tr></thead><tbody>' + tr + '</tbody></table></div><div class="cards">' + cards + '</div>' +
+        (writable() ? '<p class="hint" style="margin-top:10px">진행상태 · 예약 · 담당은 줄에서 바로 고칩니다(신청일은 고객 카드 「접수일시」). 진행상태를 고르면 그 상태가 되도록 기록이 남고(고객 카드 › 기록), 바로 뒤 「실행 취소」로 되돌릴 수 있습니다. 확정 문자(C1)를 보낸 뒤 예약 날짜를 바꾸면 「예약 변경」으로 남아 C4 문자가 다음 할 일이 됩니다.</p>' : '');
     }
   };
 
