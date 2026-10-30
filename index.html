@@ -275,6 +275,10 @@ table.cal td.is-over{box-shadow:inset 0 0 0 2px var(--late)}
 .slotadd:hover,.slotadd:focus-visible{border-color:var(--accent-line);color:var(--accent);background:var(--accent-soft)}
 .bk{display:flex;flex-direction:column;gap:1px;width:100%;padding:5px 7px;margin-bottom:3px;border:0;border-left:3px solid var(--g-rsv);background:var(--g-rsv-soft);text-align:left;cursor:pointer;font-size:12px;line-height:1.35;border-radius:0 2px 2px 0;color:var(--ink)}
 .bk b{font-size:13px}
+.bk[draggable="true"]{cursor:grab}
+.bk.dragging{opacity:.45}
+table.cal td.drop-ok{outline:2px dashed var(--accent);outline-offset:-3px;background:var(--g-rsv-soft)}
+table.cal td.drop-no{outline:2px dashed var(--late);outline-offset:-3px}
 .bk.visit{border-color:var(--g-visit);background:var(--g-visit-soft)}
 .bk.noshow{border-color:var(--late);background:var(--late-soft)}
 .bk.order{border-color:var(--g-order);background:var(--g-order-soft)}
@@ -1670,7 +1674,8 @@ table.prev tr.off td.memo{color:var(--mute)}
   function bkChip(x) {
     var cls = x.c.visit === '방문' ? ' visit' : x.c.visit === '노쇼' ? ' noshow' : x.d.code >= 12 ? ' order' : '';
     var tag = x.c.visit === '방문' ? '방문' : x.c.visit === '노쇼' ? '노쇼' : (x.d.act.type === 'sms' ? x.d.act.code + ' 할 일' : '예약');
-    return '<button class="bk' + cls + '" data-act="open" data-id="' + esc(x.c.id) + '"><b>' + esc(x.c.name) + '</b><span>' + esc(x.c.party || '') + (x.c.consult ? ' · ' + esc(x.c.consult) : '') + ' · ' + esc(tag) + '</span></button>';
+    var dr = writable() && !x.c.visit ? ' draggable="true" data-drag="' + esc(x.c.id) + '" title="끌어서 다른 시간으로 옮기기"' : '';
+    return '<button class="bk' + cls + '" data-act="open" data-id="' + esc(x.c.id) + '"' + dr + '><b>' + esc(x.c.name) + '</b><span>' + esc(x.c.party || '') + (x.c.consult ? ' · ' + esc(x.c.consult) : '') + ' · ' + esc(tag) + '</span></button>';
   }
   VIEW.calendar = {
     mount: function () {
@@ -1702,7 +1707,7 @@ table.prev tr.off td.memo{color:var(--mute)}
           if (arr.length > 1 || (!sl.open && arr.length)) cls.push('is-over');
           var inner = arr.map(bkChip).join('');
           if (!arr.length && !cal.isHoliday(d) && sl.open && !past) inner = '<button class="slotadd" data-act="slot-add" data-date="' + d + '" data-time="' + esc(sl.t) + '" aria-label="' + md(d) + ' ' + esc(sl.t) + ' 예약">+ 예약</button>';
-          return '<td class="' + cls.join(' ') + '">' + inner + '</td>';
+          return '<td class="' + cls.join(' ') + '" data-cd="' + d + '" data-ct="' + esc(sl.t) + '">' + inner + '</td>';
         }).join('') + '</tr>';
       }).join('');
       var agenda = days.map(function (d) {
@@ -1714,7 +1719,7 @@ table.prev tr.off td.memo{color:var(--mute)}
         return '<div class="day"><h3>' + md(d) + (d === t ? ' · 오늘' : '') + '</h3>' + (rows || '<div class="slotrow"><span></span><span class="muted small">남은 시간이 없습니다</span></div>') + '</div>';
       }).join('');
       $('#cal-body').innerHTML = '<div class="calwrap"><table class="cal"><thead>' + head + '</thead><tbody>' + body + '</tbody></table></div><div class="agenda">' + agenda + '</div>' +
-        '<p class="hint" style="margin-top:10px">빈 칸을 누르면 그 시간으로 예약합니다. 빨간 테두리 = 한 시간에 두 팀이거나 닫힌 시간 예약(다시 조율). 시간 열고 닫기 · 추가는 설정 › 예약 시간.</p>';
+        '<p class="hint" style="margin-top:10px">빈 칸을 누르면 그 시간으로 예약합니다. 예약 카드를 끌어다 다른 칸에 놓으면 그 시간으로 옮깁니다(PC). 빨간 테두리 = 한 시간에 두 팀이거나 닫힌 시간 예약(다시 조율). 시간 열고 닫기 · 추가는 설정 › 예약 시간.</p>';
     }
   };
 
@@ -3408,6 +3413,41 @@ table.prev tr.off td.memo{color:var(--mute)}
   ACT['imp-go'] = runImport;
   ACT['imp-undo'] = function (el) { undoImport(el.dataset.id, true); };
 
+  (function () {
+    var dragId = '';
+    var cellOf = function (ev) { var td = ev.target.closest && ev.target.closest('table.cal td[data-cd]'); return td || null; };
+    var okCell = function (td) {
+      if (!td) return false;
+      var d = td.dataset.cd, t = td.dataset.ct, tday = today();
+      if (cal.isHoliday(d)) return false;
+      return !(d < tday || (d === tday && t < L.timeOf(now())));
+    };
+    var clear = function () { document.querySelectorAll('table.cal td.drop-ok, table.cal td.drop-no').forEach(function (e) { e.classList.remove('drop-ok', 'drop-no'); }); };
+    document.addEventListener('dragstart', function (ev) {
+      var b = ev.target.closest && ev.target.closest('.bk[data-drag]'); if (!b) return;
+      dragId = b.dataset.drag; b.classList.add('dragging');
+      try { ev.dataTransfer.setData('text/plain', dragId); ev.dataTransfer.effectAllowed = 'move'; } catch (e) { }
+    });
+    document.addEventListener('dragend', function (ev) { var b = ev.target.closest && ev.target.closest('.bk'); if (b) b.classList.remove('dragging'); dragId = ''; clear(); });
+    document.addEventListener('dragover', function (ev) {
+      if (!dragId) return; var td = cellOf(ev); if (!td) return;
+      clear(); var ok = okCell(td); td.classList.add(ok ? 'drop-ok' : 'drop-no');
+      if (ok) { ev.preventDefault(); ev.dataTransfer.dropEffect = 'move'; }
+    });
+    document.addEventListener('drop', function (ev) {
+      var td = cellOf(ev), id = dragId; clear(); if (!id || !td || !okCell(td)) return;
+      ev.preventDefault(); dragId = '';
+      var c = C()[id]; if (!c) return;
+      var date = td.dataset.cd, time = td.dataset.ct;
+      if (c.rsv && c.rsv.date === date && c.rsv.time === time) return;
+      if (!writable()) { toast('보기 전용입니다'); return; }
+      var other = list().filter(function (x) { return x.d.slot === date + '|' + time && x.c.id !== id; })[0];
+      var q = c.name + ' 고객 예약을 옮길까요?\n\n' + (c.rsv && c.rsv.date ? md(c.rsv.date) + ' ' + (c.rsv.time || '') : '—') + '  →  ' + md(date) + ' ' + time +
+        (other ? '\n\n※ 같은 시간에 ' + other.c.name + ' 고객 예약이 있습니다.' : '');
+      if (!window.confirm(q)) return;
+      saveRsv({ id: id, move: true, force: true, pick: { date: date, time: time }, party: c.party || '2명', consult: c.consult || '' });
+    });
+  })();
   document.addEventListener('click', function (ev) {
     var el = ev.target.closest('[data-act]');
     if (!el) { var sr = $('#search-res'); if (sr && !ev.target.closest('.search')) sr.hidden = true; return; }
