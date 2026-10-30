@@ -1720,7 +1720,6 @@ table.prev tr.off td.memo{color:var(--mute)}
       (shown.length ? '<div class="tablewrap"><table><thead><tr><th>시각</th><th>구분</th><th>고객</th><th>내용</th><th>처리</th></tr></thead><tbody>' + body + '</tbody></table></div>'
         : '<div class="empty-state small">이 기간에 기록이 없습니다</div>') + '</div></div>';
   }
-  ACT['alog'] = function (el) { var f = S.alog || (S.alog = { days: 7, op: 'all' }); f[el.dataset.k] = el.dataset.k === 'days' ? +el.dataset.v : el.dataset.v; renderAudit(); };
   VIEW.calendar = {
     mount: function () {
       $('#view').innerHTML = '<div class="calbar"><button class="btn sm" data-act="cal-move" data-v="-7" aria-label="이전 주">‹ 이전 주</button><button class="btn sm" data-act="cal-today">이번 주</button><button class="btn sm" data-act="cal-move" data-v="7" aria-label="다음 주">다음 주 ›</button><h2 id="cal-title"></h2>' +
@@ -3370,6 +3369,7 @@ table.prev tr.off td.memo{color:var(--mute)}
   };
   ACT['confirm-yes'] = function () { var m = S.modal; closeModal(); if (m && m.onYes) m.onYes(); };
   ACT['f-flag'] = function (el) { S.f.flag = el.dataset.v; $$('[data-act="f-flag"]').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.v === S.f.flag)); }); VIEW.customers.update(); };
+  ACT['alog'] = function (el) { var f = S.alog || (S.alog = { days: 7, op: 'all' }); f[el.dataset.k] = el.dataset.k === 'days' ? +el.dataset.v : el.dataset.v; renderAudit(); };
   ACT['meta-sync'] = function (el) {
     if (el.dataset.busy) return;
     el.dataset.busy = '1'; el.disabled = true; el.textContent = '가져오는 중…';
