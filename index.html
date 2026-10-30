@@ -450,6 +450,14 @@ details.fold>summary .muted{font-weight:500;font-size:12px}
 
 /* ---------- Meta 잠재 고객 가져오기 ---------- */
 .syncbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
+.alog{margin-top:16px}
+.alog .bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px}
+.alog table{width:100%;border-collapse:collapse;font-size:13px}
+.alog th{text-align:left;font-size:12px;color:var(--ink-2);padding:7px 10px;border-bottom:1px solid var(--line-2);background:var(--surface-2)}
+.alog td{padding:7px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+.alog td.at{white-space:nowrap;font-family:var(--num);color:var(--ink-2)}
+.op{display:inline-block;padding:1px 7px;border-radius:2px;font-size:12px;font-weight:700;white-space:nowrap}
+.op.c{background:var(--g-visit-soft);color:var(--g-visit)}.op.u{background:var(--g-rsv-soft);color:var(--g-rsv)}.op.d{background:var(--late-soft);color:var(--late)}
 .impstrip{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:10px 14px;margin-bottom:12px;border:1px dashed var(--line-2);background:var(--surface);font-size:13px}
 .impstrip>svg{width:18px;height:18px;stroke:var(--accent);fill:none;stroke-width:1.8;flex:none}
 .impstrip>span:first-of-type{flex:1 1 300px;min-width:0}
@@ -1307,6 +1315,10 @@ table.prev tr.off td.memo{color:var(--mute)}
           else return;
           recal(); if (!S.op) S.op = staff()[0] || ''; scheduleRender();
         }, function (e) { dbErr(e); });
+        db.collection('audit').onSnapshot(function (snap) {
+          var a = []; snap.docs.forEach(function (d) { var v = d.data(); if (v) { var o = clone(v); o.k = d.id; a.push(o); } });
+          S.audit = a; if (S.view === 'calendar') renderAudit();
+        }, function () { });
         db.collection('content').onSnapshot(function (snap) {
           var o = {}, om = {};
           snap.docs.forEach(function (d) { var v = d.data(); if (v && v.v !== undefined && EDITABLE.indexOf(d.id) >= 0) { o[d.id] = clone(v.v); om[d.id] = { at: v.at || '', by: v.by || '' }; } });
@@ -1679,14 +1691,45 @@ table.prev tr.off td.memo{color:var(--mute)}
     var dr = writable() && !x.c.visit ? ' data-drag="' + esc(x.c.id) + '" title="끌어서 다른 시간으로 옮기기"' : '';
     return '<div role="button" tabindex="0" class="bk' + cls + '" data-act="open" data-id="' + esc(x.c.id) + '"' + dr + '><b>' + esc(x.c.name) + '</b><span>' + esc(x.c.party || '') + (x.c.consult ? ' · ' + esc(x.c.consult) : '') + ' · ' + esc(tag) + '</span></div>';
   }
+  // 고객 변경 기록(생성·수정·삭제) — DB 트리거가 docs 'audit'에 남김
+  var AUD_F = { name: '이름', phone: '연락처', email: '이메일', inAt: '접수일시', src: '유입경로', mkt: '광고 동의', tm: '담당', consult: '상담사', party: '인원',
+    calls: '통화', sms: '문자', recall: '다시 연락', rsv: '예약', rsvHist: '예약 이력', visit: '방문 결과', visitAt: '방문 시각', cres: '상담 결과', cresAt: '상담 시각',
+    fu: '후속', model: '모델', color: '색상', amt: '금액', pDate: '결제일', dDate: '배송일', dDateAt: '배송 확정', dSlot: '배송 시간', dAddr: '배송 주소',
+    close: '종료', closeAt: '종료 시각', memo: '메모', metaId: '메타 ID', metaAd: '광고', imp: '가져오기 묶음', st: '진행상태' };
+  function renderAudit() {
+    var box = $('#cal-log'); if (!box) return;
+    if (S.mode !== 'shared') { box.innerHTML = ''; return; }
+    var f = S.alog || (S.alog = { days: 7, op: 'all' });
+    var from = f.days ? L.addDays(today(), -(f.days - 1)) : '';
+    var rows = (S.audit || []).filter(function (a) { return (!from || (a.at || '').slice(0, 10) >= from) && (f.op === 'all' || a.op === f.op); })
+      .sort(function (a, b) { return a.k < b.k ? 1 : -1; });
+    var shown = rows.slice(0, 200), cs = C();
+    var seg = function (key, opts) { return '<div class="seg" role="group">' + opts.map(function (o) { return '<button type="button" data-act="alog" data-k="' + key + '" data-v="' + o[0] + '" aria-pressed="' + (String(f[key]) === String(o[0])) + '">' + o[1] + '</button>'; }).join('') + '</div>'; };
+    var body = shown.map(function (a) {
+      var cls = a.op === '생성' ? 'c' : a.op === '삭제' ? 'd' : 'u';
+      var nm = esc(a.name || '(이름 없음)'), alive = !!cs[a.cid];
+      var who = alive ? '<button class="linkbtn" data-act="open" data-id="' + esc(a.cid) + '">' + nm + '</button>' : '<span class="muted">' + nm + '</span>';
+      var what = (a.fields || []).map(function (k) { return AUD_F[k] || k; }).join(' · ');
+      var txt = [a.note, what ? '바뀐 항목: ' + what : ''].filter(Boolean).join(' — ');
+      var by = String(a.by || '').replace(/@.*$/, '');
+      return '<tr><td class="at">' + esc(md((a.at || '').slice(0, 10))) + ' ' + esc((a.at || '').slice(11, 16)) + '</td><td><span class="op ' + cls + '">' + esc(a.op) + '</span></td><td>' + who + '</td><td>' + esc(txt || (a.op === '생성' ? '새 고객' : a.op === '삭제' ? '고객 삭제' : '')) + '</td><td class="muted small">' + esc(by) + '</td></tr>';
+    }).join('');
+    box.innerHTML = '<div class="panel"><header><h2>변경 기록</h2><span class="r muted small">고객이 생기고 · 바뀌고 · 지워진 때 (자동 기록)</span></header><div class="pad">' +
+      '<div class="bar">' + seg('days', [[1, '오늘'], [7, '7일'], [30, '30일'], [0, '전체']]) + seg('op', [['all', '전체'], ['생성', '생성'], ['수정', '수정'], ['삭제', '삭제']]) +
+      '<span class="muted small">' + rows.length + '건' + (rows.length > 200 ? ' · 최근 200건 표시' : '') + '</span></div>' +
+      (shown.length ? '<div class="tablewrap"><table><thead><tr><th>시각</th><th>구분</th><th>고객</th><th>내용</th><th>처리</th></tr></thead><tbody>' + body + '</tbody></table></div>'
+        : '<div class="empty-state small">이 기간에 기록이 없습니다</div>') + '</div></div>';
+  }
+  ACT['alog'] = function (el) { var f = S.alog || (S.alog = { days: 7, op: 'all' }); f[el.dataset.k] = el.dataset.k === 'days' ? +el.dataset.v : el.dataset.v; renderAudit(); };
   VIEW.calendar = {
     mount: function () {
       $('#view').innerHTML = '<div class="calbar"><button class="btn sm" data-act="cal-move" data-v="-7" aria-label="이전 주">‹ 이전 주</button><button class="btn sm" data-act="cal-today">이번 주</button><button class="btn sm" data-act="cal-move" data-v="7" aria-label="다음 주">다음 주 ›</button><h2 id="cal-title"></h2>' +
-        '<span class="legend"><span><i style="background:var(--g-rsv-soft);border-left:3px solid var(--g-rsv)"></i>예약</span><span><i style="background:var(--g-visit-soft);border-left:3px solid var(--g-visit)"></i>방문</span><span><i style="background:var(--late-soft);border-left:3px solid var(--late)"></i>노쇼</span><span><i style="background:repeating-linear-gradient(135deg,var(--surface-2) 0 3px,var(--sunk) 3px 6px)"></i>닫힌 시간</span></span></div><div id="cal-body"></div>';
+        '<span class="legend"><span><i style="background:var(--g-rsv-soft);border-left:3px solid var(--g-rsv)"></i>예약</span><span><i style="background:var(--g-visit-soft);border-left:3px solid var(--g-visit)"></i>방문</span><span><i style="background:var(--late-soft);border-left:3px solid var(--late)"></i>노쇼</span><span><i style="background:repeating-linear-gradient(135deg,var(--surface-2) 0 3px,var(--sunk) 3px 6px)"></i>닫힌 시간</span></span></div><div id="cal-body"></div><div id="cal-log" class="alog"></div>';
       this.update();
     },
     update: function () {
       if (!$('#cal-body')) return this.mount();
+      renderAudit();
       var t = today(), nowT = L.timeOf(now()), mon = S.calStart, days = [];
       for (var i = 0; i < 7; i++) days.push(L.addDays(mon, i));
       $('#cal-title').textContent = md(days[0]) + ' – ' + md(days[6]);
