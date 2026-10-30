@@ -275,7 +275,7 @@ table.cal td.is-over{box-shadow:inset 0 0 0 2px var(--late)}
 .slotadd:hover,.slotadd:focus-visible{border-color:var(--accent-line);color:var(--accent);background:var(--accent-soft)}
 .bk{display:flex;flex-direction:column;gap:1px;width:100%;padding:5px 7px;margin-bottom:3px;border:0;border-left:3px solid var(--g-rsv);background:var(--g-rsv-soft);text-align:left;cursor:pointer;font-size:12px;line-height:1.35;border-radius:0 2px 2px 0;color:var(--ink)}
 .bk b{font-size:13px}
-.bk[draggable="true"]{cursor:grab}
+.bk[draggable="true"]{cursor:grab;-webkit-user-drag:element;user-select:none}
 .bk.dragging{opacity:.45}
 table.cal td.drop-ok{outline:2px dashed var(--accent);outline-offset:-3px;background:var(--g-rsv-soft)}
 table.cal td.drop-no{outline:2px dashed var(--late);outline-offset:-3px}
@@ -1675,7 +1675,7 @@ table.prev tr.off td.memo{color:var(--mute)}
     var cls = x.c.visit === '방문' ? ' visit' : x.c.visit === '노쇼' ? ' noshow' : x.d.code >= 12 ? ' order' : '';
     var tag = x.c.visit === '방문' ? '방문' : x.c.visit === '노쇼' ? '노쇼' : (x.d.act.type === 'sms' ? x.d.act.code + ' 할 일' : '예약');
     var dr = writable() && !x.c.visit ? ' draggable="true" data-drag="' + esc(x.c.id) + '" title="끌어서 다른 시간으로 옮기기"' : '';
-    return '<button class="bk' + cls + '" data-act="open" data-id="' + esc(x.c.id) + '"' + dr + '><b>' + esc(x.c.name) + '</b><span>' + esc(x.c.party || '') + (x.c.consult ? ' · ' + esc(x.c.consult) : '') + ' · ' + esc(tag) + '</span></button>';
+    return '<div role="button" tabindex="0" class="bk' + cls + '" data-act="open" data-id="' + esc(x.c.id) + '"' + dr + '><b>' + esc(x.c.name) + '</b><span>' + esc(x.c.party || '') + (x.c.consult ? ' · ' + esc(x.c.consult) : '') + ' · ' + esc(tag) + '</span></div>';
   }
   VIEW.calendar = {
     mount: function () {
@@ -3415,6 +3415,7 @@ table.prev tr.off td.memo{color:var(--mute)}
 
   (function () {
     var dragId = '';
+    S.dragging = false;
     var cellOf = function (ev) { var td = ev.target.closest && ev.target.closest('table.cal td[data-cd]'); return td || null; };
     var okCell = function (td) {
       if (!td) return false;
@@ -3425,18 +3426,19 @@ table.prev tr.off td.memo{color:var(--mute)}
     var clear = function () { document.querySelectorAll('table.cal td.drop-ok, table.cal td.drop-no').forEach(function (e) { e.classList.remove('drop-ok', 'drop-no'); }); };
     document.addEventListener('dragstart', function (ev) {
       var b = ev.target.closest && ev.target.closest('.bk[data-drag]'); if (!b) return;
-      dragId = b.dataset.drag; b.classList.add('dragging');
+      dragId = b.dataset.drag; S.dragging = true; b.classList.add('dragging');
       try { ev.dataTransfer.setData('text/plain', dragId); ev.dataTransfer.effectAllowed = 'move'; } catch (e) { }
     });
-    document.addEventListener('dragend', function (ev) { var b = ev.target.closest && ev.target.closest('.bk'); if (b) b.classList.remove('dragging'); dragId = ''; clear(); });
+    document.addEventListener('dragend', function (ev) { var b = ev.target.closest && ev.target.closest('.bk'); if (b) b.classList.remove('dragging'); dragId = ''; S.dragging = false; clear(); });
     document.addEventListener('dragover', function (ev) {
       if (!dragId) return; var td = cellOf(ev); if (!td) return;
-      clear(); var ok = okCell(td); td.classList.add(ok ? 'drop-ok' : 'drop-no');
+      clear(); var c0 = C()[dragId], home = c0 && c0.rsv && c0.rsv.date === td.dataset.cd && c0.rsv.time === td.dataset.ct;
+      var ok = okCell(td) || home; if (!home) td.classList.add(ok ? 'drop-ok' : 'drop-no');
       if (ok) { ev.preventDefault(); ev.dataTransfer.dropEffect = 'move'; }
     });
     document.addEventListener('drop', function (ev) {
       var td = cellOf(ev), id = dragId; clear(); if (!id || !td || !okCell(td)) return;
-      ev.preventDefault(); dragId = '';
+      ev.preventDefault(); dragId = ''; S.dragging = false;
       var c = C()[id]; if (!c) return;
       var date = td.dataset.cd, time = td.dataset.ct;
       if (c.rsv && c.rsv.date === date && c.rsv.time === time) return;
@@ -3558,7 +3560,7 @@ table.prev tr.off td.memo{color:var(--mute)}
     if (S.view === 'call' && S.call.start) { var el = $('#call-clock'); if (el) { var s = Math.round((Date.now() - S.call.start) / 1000); el.textContent = Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); } }
     if (today() !== lastDay) { lastDay = today(); S.calStart = mondayOf(lastDay); scheduleRender(); }
   }, 1000);
-  setInterval(function () { if (!S.modal) scheduleRender(); }, 60000);
+  setInterval(function () { if (!S.modal && !S.dragging) scheduleRender(); }, 60000);
 
   // ---------------------------------------------------------------- 시작
   function boot() {
