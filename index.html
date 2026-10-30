@@ -275,7 +275,9 @@ table.cal td.is-over{box-shadow:inset 0 0 0 2px var(--late)}
 .slotadd:hover,.slotadd:focus-visible{border-color:var(--accent-line);color:var(--accent);background:var(--accent-soft)}
 .bk{display:flex;flex-direction:column;gap:1px;width:100%;padding:5px 7px;margin-bottom:3px;border:0;border-left:3px solid var(--g-rsv);background:var(--g-rsv-soft);text-align:left;cursor:pointer;font-size:12px;line-height:1.35;border-radius:0 2px 2px 0;color:var(--ink)}
 .bk b{font-size:13px}
-.bk[draggable="true"]{cursor:grab;-webkit-user-drag:element;user-select:none}
+.bk[data-drag]{cursor:grab;user-select:none;-webkit-user-select:none;touch-action:none}
+.bk-ghost{position:fixed;z-index:9999;pointer-events:none;opacity:.9;box-shadow:0 6px 18px rgba(0,0,0,.25);margin:0}
+body.is-dragging,body.is-dragging *{cursor:grabbing!important}
 .bk.dragging{opacity:.45}
 table.cal td.drop-ok{outline:2px dashed var(--accent);outline-offset:-3px;background:var(--g-rsv-soft)}
 table.cal td.drop-no{outline:2px dashed var(--late);outline-offset:-3px}
@@ -1674,7 +1676,7 @@ table.prev tr.off td.memo{color:var(--mute)}
   function bkChip(x) {
     var cls = x.c.visit === '방문' ? ' visit' : x.c.visit === '노쇼' ? ' noshow' : x.d.code >= 12 ? ' order' : '';
     var tag = x.c.visit === '방문' ? '방문' : x.c.visit === '노쇼' ? '노쇼' : (x.d.act.type === 'sms' ? x.d.act.code + ' 할 일' : '예약');
-    var dr = writable() && !x.c.visit ? ' draggable="true" data-drag="' + esc(x.c.id) + '" title="끌어서 다른 시간으로 옮기기"' : '';
+    var dr = writable() && !x.c.visit ? ' data-drag="' + esc(x.c.id) + '" title="끌어서 다른 시간으로 옮기기"' : '';
     return '<div role="button" tabindex="0" class="bk' + cls + '" data-act="open" data-id="' + esc(x.c.id) + '"' + dr + '><b>' + esc(x.c.name) + '</b><span>' + esc(x.c.party || '') + (x.c.consult ? ' · ' + esc(x.c.consult) : '') + ' · ' + esc(tag) + '</span></div>';
   }
   VIEW.calendar = {
@@ -1719,7 +1721,7 @@ table.prev tr.off td.memo{color:var(--mute)}
         return '<div class="day"><h3>' + md(d) + (d === t ? ' · 오늘' : '') + '</h3>' + (rows || '<div class="slotrow"><span></span><span class="muted small">남은 시간이 없습니다</span></div>') + '</div>';
       }).join('');
       $('#cal-body').innerHTML = '<div class="calwrap"><table class="cal"><thead>' + head + '</thead><tbody>' + body + '</tbody></table></div><div class="agenda">' + agenda + '</div>' +
-        '<p class="hint" style="margin-top:10px">빈 칸을 누르면 그 시간으로 예약합니다. 예약 카드를 끌어다 다른 칸에 놓으면 그 시간으로 옮깁니다(PC). 빨간 테두리 = 한 시간에 두 팀이거나 닫힌 시간 예약(다시 조율). 시간 열고 닫기 · 추가는 설정 › 예약 시간.</p>';
+        '<p class="hint" style="margin-top:10px">빈 칸을 누르면 그 시간으로 예약합니다. 예약 카드를 끌어다 다른 칸에 놓으면 그 시간으로 옮깁니다. 빨간 테두리 = 한 시간에 두 팀이거나 닫힌 시간 예약(다시 조율). 시간 열고 닫기 · 추가는 설정 › 예약 시간.</p>';
     }
   };
 
@@ -3413,10 +3415,10 @@ table.prev tr.off td.memo{color:var(--mute)}
   ACT['imp-go'] = runImport;
   ACT['imp-undo'] = function (el) { undoImport(el.dataset.id, true); };
 
+  // 캘린더 예약 카드 끌어서 옮기기 — 브라우저 기본 드래그 대신 포인터를 직접 따라감(크롬 금지 커서·터치 대응)
   (function () {
-    var dragId = '';
+    var st = null, ghost = null, lastTd = null, eatClick = false;
     S.dragging = false;
-    var cellOf = function (ev) { var td = ev.target.closest && ev.target.closest('table.cal td[data-cd]'); return td || null; };
     var okCell = function (td) {
       if (!td) return false;
       var d = td.dataset.cd, t = td.dataset.ct, tday = today();
@@ -3424,21 +3426,44 @@ table.prev tr.off td.memo{color:var(--mute)}
       return !(d < tday || (d === tday && t < L.timeOf(now())));
     };
     var clear = function () { document.querySelectorAll('table.cal td.drop-ok, table.cal td.drop-no').forEach(function (e) { e.classList.remove('drop-ok', 'drop-no'); }); };
-    document.addEventListener('dragstart', function (ev) {
+    var tdAt = function (x, y) { var el = document.elementFromPoint(x, y); return el && el.closest ? el.closest('table.cal td[data-cd]') : null; };
+    var end = function () {
+      if (ghost) ghost.remove(); ghost = null; clear();
+      if (st && st.el) st.el.classList.remove('dragging');
+      document.body.classList.remove('is-dragging');
+      st = null; lastTd = null; S.dragging = false;
+    };
+    document.addEventListener('pointerdown', function (ev) {
+      if (ev.button !== 0) return;
       var b = ev.target.closest && ev.target.closest('.bk[data-drag]'); if (!b) return;
-      dragId = b.dataset.drag; S.dragging = true; b.classList.add('dragging');
-      try { ev.dataTransfer.setData('text/plain', dragId); ev.dataTransfer.effectAllowed = 'move'; } catch (e) { }
+      st = { id: b.dataset.drag, el: b, x: ev.clientX, y: ev.clientY, on: false };
     });
-    document.addEventListener('dragend', function (ev) { var b = ev.target.closest && ev.target.closest('.bk'); if (b) b.classList.remove('dragging'); dragId = ''; S.dragging = false; clear(); });
-    document.addEventListener('dragover', function (ev) {
-      if (!dragId) return; var td = cellOf(ev); if (!td) return;
-      clear(); var c0 = C()[dragId], home = c0 && c0.rsv && c0.rsv.date === td.dataset.cd && c0.rsv.time === td.dataset.ct;
-      var ok = okCell(td) || home; if (!home) td.classList.add(ok ? 'drop-ok' : 'drop-no');
-      if (ok) { ev.preventDefault(); ev.dataTransfer.dropEffect = 'move'; }
-    });
-    document.addEventListener('drop', function (ev) {
-      var td = cellOf(ev), id = dragId; clear(); if (!id || !td || !okCell(td)) return;
-      ev.preventDefault(); dragId = ''; S.dragging = false;
+    document.addEventListener('pointermove', function (ev) {
+      if (!st) return;
+      if (!st.on) {
+        if (Math.abs(ev.clientX - st.x) + Math.abs(ev.clientY - st.y) < 6) return;
+        st.on = true; S.dragging = true;
+        var r = st.el.getBoundingClientRect();
+        ghost = st.el.cloneNode(true); ghost.className += ' bk-ghost'; ghost.removeAttribute('data-act');
+        ghost.style.width = r.width + 'px'; st.dx = ev.clientX - r.left; st.dy = ev.clientY - r.top;
+        document.body.appendChild(ghost); st.el.classList.add('dragging'); document.body.classList.add('is-dragging');
+      }
+      ev.preventDefault();
+      ghost.style.left = (ev.clientX - st.dx) + 'px'; ghost.style.top = (ev.clientY - st.dy) + 'px';
+      var td = tdAt(ev.clientX, ev.clientY);
+      if (td !== lastTd) {
+        clear(); lastTd = td;
+        var c0 = C()[st.id], home = td && c0 && c0.rsv && c0.rsv.date === td.dataset.cd && c0.rsv.time === td.dataset.ct;
+        if (td && !home) td.classList.add(okCell(td) ? 'drop-ok' : 'drop-no');
+      }
+    }, { passive: false });
+    document.addEventListener('pointerup', function (ev) {
+      if (!st) return;
+      if (!st.on) { st = null; return; }   // 그냥 클릭 → 카드 열기 그대로
+      eatClick = true; setTimeout(function () { eatClick = false; }, 300);
+      var id = st.id, td = tdAt(ev.clientX, ev.clientY);
+      end();
+      if (!td || !okCell(td)) { if (td) toast('지난 시간이나 휴무일에는 옮길 수 없습니다'); return; }
       var c = C()[id]; if (!c) return;
       var date = td.dataset.cd, time = td.dataset.ct;
       if (c.rsv && c.rsv.date === date && c.rsv.time === time) return;
@@ -3449,6 +3474,11 @@ table.prev tr.off td.memo{color:var(--mute)}
       if (!window.confirm(q)) return;
       saveRsv({ id: id, move: true, force: true, pick: { date: date, time: time }, party: c.party || '2명', consult: c.consult || '' });
     });
+    document.addEventListener('pointercancel', end);
+    // 끈 직후 따라오는 클릭(카드 열기) 먹기
+    document.addEventListener('click', function (ev) { if (eatClick) { eatClick = false; ev.stopPropagation(); ev.preventDefault(); } }, true);
+    // 브라우저 기본 드래그(이미지·글자) 막기
+    document.addEventListener('dragstart', function (ev) { if (ev.target.closest && ev.target.closest('.bk[data-drag]')) ev.preventDefault(); });
   })();
   document.addEventListener('click', function (ev) {
     var el = ev.target.closest('[data-act]');
