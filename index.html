@@ -193,7 +193,7 @@ body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset
 .funnel .bar{height:10px;background:var(--sunk);position:relative}
 .funnel .bar i{position:absolute;inset:0 auto 0 0;background:var(--accent)}
 .funnel .row b{font-family:var(--num);text-align:right}
-.week-mini{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:1px;background:var(--line);border:1px solid var(--line)}
+.week-mini{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:1px;background:var(--line);border:1px solid var(--line)}
 .week-mini div{background:var(--surface);padding:8px 6px;text-align:center;font-size:12px}
 .week-mini div b{display:block;font-family:var(--num);font-size:18px}
 .week-mini div.is-today{background:var(--accent-soft)}
@@ -257,7 +257,7 @@ tr.flash td,.ccard.flash{animation:flashrow 1.8s ease-out}
 .calbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
 .calbar h2{font-size:16px;font-weight:800;margin:0 6px}
 .calwrap{overflow-x:auto;border:1px solid var(--line);background:var(--surface)}
-table.cal{border-collapse:collapse;width:100%;min-width:760px;table-layout:fixed}
+table.cal{border-collapse:collapse;width:100%;min-width:900px;table-layout:fixed}
 table.cal th,table.cal td{border-right:1px solid var(--line);border-bottom:1px solid var(--line)}
 table.cal th:last-child,table.cal td:last-child{border-right:0}
 table.cal thead th{padding:9px 8px;font-size:13px;font-weight:800;background:var(--surface-2);text-align:center}
@@ -729,7 +729,7 @@ table.prev tr.off td.memo{color:var(--mute)}
     }
     function eom(s) { var d = parse(s); return ymd(new Date(d.getFullYear(), d.getMonth() + 1, 0)); }
     return {
-      isBiz: isBiz, isHoliday: isHoliday, holidayName: function (s) { return H[s] || ''; },
+      isBiz: isBiz, isOpen: function (s) { return !isHoliday(s); }, isHoliday: isHoliday, holidayName: function (s) { return H[s] || ''; },
       workday: workday, eom: eom, nextMonthFirstBiz: function (s) { return workday(eom(s), 1); }
     };
   }
@@ -925,7 +925,7 @@ table.prev tr.off td.memo{color:var(--mute)}
     if (opts.far) cands = cands.filter(function (t) { return t >= '11:30'; });
     var free = [], d = today, n = 0;
     while (free.length < 40 && n < 60) {
-      if (cal.isBiz(d)) {
+      if (cal.isOpen ? cal.isOpen(d) : cal.isBiz(d)) {
         cands.forEach(function (t) {
           if (d === today && t < minT) return;
           if (!booked[d + '|' + t]) free.push({ date: d, time: t });
@@ -1073,7 +1073,7 @@ table.prev tr.off td.memo{color:var(--mute)}
   function recal() { cal = L.makeCal(S.settings.holidays); }
   function today() { return L.ymd(new Date()); }
   function now() { return L.nowIso(); }
-  function mondayOf(s) { var d = L.parse(s), w = d.getDay(); return L.addDays(s, w === 0 ? 1 : w === 6 ? 2 : 1 - w); }
+  function mondayOf(s) { var d = L.parse(s), w = d.getDay(); return L.addDays(s, w === 0 ? -6 : 1 - w); }
   S.calStart = mondayOf(today());
   function C() { return S.demo ? S.demo : S.customers; }
   function staff() { return (S.settings.staff || []).filter(Boolean); }
@@ -1579,7 +1579,7 @@ table.prev tr.off td.memo{color:var(--mute)}
         return '<button class="visit-row" data-act="open" data-id="' + esc(c.id) + '"><span class="t">' + esc(c.rsv.time || '워크인') + '</span><span><b>' + esc(c.name) + '</b> <span class="muted small">' + esc(c.party || '') + (c.consult ? ' · ' + esc(c.consult) : '') + '</span></span>' + st + '</button>';
       }).join('') : '<div class="empty-state small">오늘 방문 예약이 없습니다</div>';
       var mon = mondayOf(t), wk = '';
-      for (var i = 0; i < 5; i++) {
+      for (var i = 0; i < 7; i++) {
         var dd = L.addDays(mon, i), cnt = all.filter(function (x) { return x.d.slot && x.c.rsv.date === dd; }).length;
         wk += '<div' + (dd === t ? ' class="is-today"' : '') + '>' + L.WD[L.parse(dd).getDay()] + '<b>' + (cal.isHoliday(dd) ? '–' : cnt) + '</b></div>';
       }
@@ -1681,8 +1681,8 @@ table.prev tr.off td.memo{color:var(--mute)}
     update: function () {
       if (!$('#cal-body')) return this.mount();
       var t = today(), nowT = L.timeOf(now()), mon = S.calStart, days = [];
-      for (var i = 0; i < 5; i++) days.push(L.addDays(mon, i));
-      $('#cal-title').textContent = md(days[0]) + ' – ' + md(days[4]);
+      for (var i = 0; i < 7; i++) days.push(L.addDays(mon, i));
+      $('#cal-title').textContent = md(days[0]) + ' – ' + md(days[6]);
       var bm = bookedMap(), slots = S.settings.slots.slice(), known = {};
       slots.forEach(function (s) { known[s.t] = 1; });
       Object.keys(bm).forEach(function (k) { var p = k.split('|'); if (days.indexOf(p[0]) >= 0 && p[1] && !known[p[1]]) { known[p[1]] = 1; slots.push({ t: p[1], open: false, first: false, extra: true }); } });
@@ -1740,8 +1740,8 @@ table.prev tr.off td.memo{color:var(--mute)}
     var t = today(), nowT = L.timeOf(now()), taken = slotTaken(), names = {};
     list().forEach(function (x) { if (x.d.slot) names[x.d.slot] = x.c.name; });
     var out = '', d = t, n = 0;
-    while (n < 12) {
-      if (cal.isBiz(d)) {
+    while (n < 14) {
+      if (cal.isOpen(d)) {
         var btns = S.settings.slots.filter(function (s) { return s.open; }).map(function (s) {
           var k = d + '|' + s.t, past = d === t && s.t < nowT, on = sel0 && sel0.date === d && sel0.time === s.t;
           var dis = (taken[k] && !on) || past;
