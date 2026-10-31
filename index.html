@@ -458,6 +458,8 @@ details.fold>summary .muted{font-weight:500;font-size:12px}
 .alog td.at{white-space:nowrap;font-family:var(--num);color:var(--ink-2)}
 .op{display:inline-block;padding:1px 7px;border-radius:2px;font-size:12px;font-weight:700;white-space:nowrap}
 .op.c{background:var(--g-visit-soft);color:var(--g-visit)}.op.u{background:var(--g-rsv-soft);color:var(--g-rsv)}.op.d{background:var(--late-soft);color:var(--late)}
+.wpfar .ts{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.wpfar-ts{display:contents}
 .impstrip{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:10px 14px;margin-bottom:12px;border:1px dashed var(--line-2);background:var(--surface);font-size:13px}
 .impstrip>svg{width:18px;height:18px;stroke:var(--accent);fill:none;stroke-width:1.8;flex:none}
 .impstrip>span:first-of-type{flex:1 1 300px;min-width:0}
@@ -1785,22 +1787,27 @@ table.prev tr.off td.memo{color:var(--mute)}
     };
     return esc(text || '').replace(/\{([^}]+)\}/g, function (m0, k) { return v[k] != null ? '<mark>' + esc(v[k]) + '</mark>' : m0; });
   }
-  function weekPicker(scope, sel0) {
+  // 예약 날짜·시간 고르기: 앞으로 14일 + 「그 뒤 날짜」 직접 고르기(먼 날짜 예약)
+  function slotBtns(scope, d, sel0) {
     var t = today(), nowT = L.timeOf(now()), taken = slotTaken(), names = {};
     list().forEach(function (x) { if (x.d.slot) names[x.d.slot] = x.c.name; });
-    var out = '', d = t, n = 0;
+    if (!cal.isOpen(d)) return '<span class="muted small">휴무 · ' + esc(cal.holidayName(d) || '예약 불가') + '</span>';
+    return S.settings.slots.filter(function (s) { return s.open; }).map(function (s) {
+      var k = d + '|' + s.t, past = d < t || (d === t && s.t < nowT), on = sel0 && sel0.date === d && sel0.time === s.t;
+      var dis = (taken[k] && !on) || past;
+      return '<button type="button" data-act="' + scope + '" data-date="' + d + '" data-time="' + s.t + '"' + (dis ? ' disabled title="' + esc(taken[k] ? names[k] + ' 예약' : '지난 시간') + '"' : '') + ' aria-pressed="' + !!on + '">' + s.t + '</button>';
+    }).join('');
+  }
+  function weekPicker(scope, sel0) {
+    var t = today(), out = '', d = t, n = 0, last = t;
     while (n < 14) {
-      if (cal.isOpen(d)) {
-        var btns = S.settings.slots.filter(function (s) { return s.open; }).map(function (s) {
-          var k = d + '|' + s.t, past = d === t && s.t < nowT, on = sel0 && sel0.date === d && sel0.time === s.t;
-          var dis = (taken[k] && !on) || past;
-          return '<button type="button" data-act="' + scope + '" data-date="' + d + '" data-time="' + s.t + '"' + (dis ? ' disabled title="' + esc(taken[k] ? names[k] + ' 예약' : '지난 시간') + '"' : '') + ' aria-pressed="' + !!on + '">' + s.t + '</button>';
-        }).join('');
-        out += '<div class="wd"><b>' + md(d) + (d === t ? ' 오늘' : '') + '</b><div class="ts">' + btns + '</div></div>';
-        n++;
-      }
+      if (cal.isOpen(d)) { out += '<div class="wd"><b>' + md(d) + (d === t ? ' 오늘' : '') + '</b><div class="ts">' + slotBtns(scope, d, sel0) + '</div></div>'; n++; last = d; }
       d = L.addDays(d, 1);
     }
+    S.wpFar = S.wpFar || {};
+    var far = (sel0 && sel0.date > last) ? sel0.date : (S.wpFar[scope] || '');
+    out += '<div class="wd wpfar"><b>그 뒤 날짜</b><div class="ts"><input type="date" class="inp" data-wpdate="' + esc(scope) + '" min="' + L.addDays(last, 1) + '" value="' + esc(far) + '" aria-label="그 뒤 날짜 고르기" style="width:auto">' +
+      '<span class="wpfar-ts" data-wpfor="' + esc(scope) + '">' + (far ? slotBtns(scope, far, sel0) : '<span class="muted small">2주 뒤 날짜는 여기서 고르세요</span>') + '</span></div></div>';
     return '<div class="weekpick">' + out + '</div>';
   }
   function callCands() {
@@ -3534,6 +3541,12 @@ table.prev tr.off td.memo{color:var(--mute)}
   });
   document.addEventListener('change', function (ev) {
     var t = ev.target;
+    if (t.dataset && t.dataset.wpdate) {
+      var sc = t.dataset.wpdate, box = t.parentNode.querySelector('.wpfar-ts');
+      S.wpFar = S.wpFar || {}; S.wpFar[sc] = t.value;
+      if (box) box.innerHTML = t.value ? slotBtns(sc, t.value, null) : '';
+      return;
+    }
     if (t.id === 'op' || t.id === 'op2') { S.op = t.value; UI.op = t.value; saveUI(); renderNav(); if (S.view === 'call') VIEW.call.update(); return; }
     if (t.dataset.file === 'meta' && t.files && t.files[0]) { var fl = t.files[0]; t.value = ''; importFile(fl); return; }
     if (t.dataset.inl) { inlineChange(t); return; }
